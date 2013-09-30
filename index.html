@@ -1,0 +1,202 @@
+﻿<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8" />
+	<meta http-equiv="X-UA-Compatible" content="IE=edge,chrome=1" />
+	<title>New project</title>
+	<!-- Note: running this exported project from disk may not work exactly like preview, since browsers block some features on the file:// protocol.  Once you've uploaded it to a server, it should work OK. -->
+	
+	<!-- Allow fullscreen mode on iOS devices. (These are Apple specific meta tags.) -->
+	<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, minimum-scale=1.0, user-scalable=no, target-densitydpi=device-dpi" />
+	<meta name="apple-mobile-web-app-capable" content="yes" />
+	<meta name="apple-mobile-web-app-status-bar-style" content="black" />
+	<meta name="HandheldFriendly" content="true" />
+
+    <!-- All margins and padding must be zero for the canvas to fill the screen. -->
+	<style type="text/css">
+		* {
+			-webkit-user-select:none;
+			-webkit-tap-highlight-color:rgba(0, 0, 0, 0);
+		}
+    </style>
+</head> 
+ 
+<body> 
+	<script src="jquery-1.7.1.min.js"></script>
+	
+
+
+	<script src="http://localhost:58888/_appMobi/appmobi.js"></script>
+	<script src="http://localhost:58888/_appMobi/xhr.js"></script>
+	
+    <script>
+	
+		function blockTouch(e)
+		{
+			e.preventDefault();
+		};
+		
+		document.addEventListener("touchstart", blockTouch);
+		document.addEventListener("touchmove", blockTouch);
+		document.addEventListener("touchend", blockTouch);
+		
+		// Size the canvas to fill the browser viewport.
+		function cr_sizeCanvasDC()
+		{
+			var w = jQuery(window).width();
+			var h = jQuery(window).height();
+			
+			if (w === 0 || h === 0)
+				return;
+			
+			AppMobi.canvas.execute("if (window['c2runtime']) window['c2runtime'].setSize(" + w + "," + h + ");");
+		}
+		
+		jQuery(window).resize(function() {
+			cr_sizeCanvasDC();
+		});
+		
+		document.addEventListener("appMobi.device.ready", function ()
+		{
+			AppMobi.canvas.load("c2runtime.js");
+			
+			document.addEventListener("appMobi.device.suspend", function() {
+				AppMobi.canvas.execute("window.cr_setSuspended(true);");
+			}, false);
+			
+			document.addEventListener("appMobi.device.resume", function() {
+				AppMobi.canvas.execute("window.cr_setSuspended(false);");
+			}, false);
+		
+		}, false);
+		
+		function onDCLoaded()
+		{
+			AppMobi.canvas.execute("cr_createDCRuntime(" + jQuery(window).width() + "," + jQuery(window).height() + ");");
+		};
+		
+		var c2alpha = 0;
+		var c2beta = 0;
+		var c2gamma = 0;
+		var c2accgx = 0;
+		var c2accgy = 0;
+		var c2accgz = 0;
+		var c2accx = 0;
+		var c2accy = 0;
+		var c2accz = 0;
+		
+		function onGameReady()
+		{
+			cr_sizeCanvasDC();
+			AppMobi.device.hideSplashScreen();
+			
+			window.addEventListener("deviceorientation", function (eventData) {
+			
+				c2alpha = eventData["alpha"] || 0;
+				c2beta = eventData["beta"] || 0;
+				c2gamma = eventData["gamma"] || 0;
+			
+			}, false);
+			
+			window.addEventListener("devicemotion", function (eventData) {
+			
+				if (eventData["accelerationIncludingGravity"])
+				{
+					c2accgx = eventData["accelerationIncludingGravity"]["x"];
+					c2accgy = eventData["accelerationIncludingGravity"]["y"];
+					c2accgz = eventData["accelerationIncludingGravity"]["z"];
+				}
+				
+				if (eventData["acceleration"])
+				{
+					c2accx = eventData["acceleration"]["x"];
+					c2accy = eventData["acceleration"]["y"];
+					c2accz = eventData["acceleration"]["z"];
+				}
+				
+			}, false);
+			
+			// Note: currently disabled
+			window.setInterval(function () {
+				AppMobi.canvas.execute('window["C2_Motion_DCSide"](' + c2alpha + ',' + c2beta + ',' + c2gamma + ',' + c2accgx + ',' + c2accgy + ',' + c2accgz + ',' + c2accx + ',' + c2accy + ',' + c2accz + ');');
+			}, 50);
+		};
+		
+		function C2_AJAX_Error(tag_)
+		{
+			AppMobi.canvas.execute('window["C2_AJAX_DCSide"]("error", "' + tag_ + '", null);');
+		};
+		
+		function C2_AJAX_Success(tag_, data_)
+		{
+			var data_replaced = data_.replace(/\\/g, '\\\\').replace(/"/g, '\\"').replace(/\n/g, '\\n');
+			AppMobi.canvas.execute('window["C2_AJAX_DCSide"]("success", "' + tag_ + '", "' + data_replaced + '");');
+		};
+		
+		function C2_AJAX_Progress(tag_, progress_)
+		{
+			AppMobi.canvas.execute('window["C2_AJAX_DCSide"]("progress", "' + tag_ + '", ' + progress_ + ');');
+		};
+		
+		// Handle AJAX events from the webview side and send results back to DC side
+		function C2_AJAX_WebSide(tag_, url_, method_, data_)
+		{
+			var request = null;
+		
+			var errorFunc = function () {
+					C2_AJAX_Error(tag_);
+				};
+				
+			var progressFunc = function (e) {
+					if (!e["lengthComputable"])
+						return;
+					
+					C2_AJAX_Progress(tag_, e.loaded / e.total);
+				};
+				
+			try
+			{
+				request = new XMLHttpRequest();
+				request.onreadystatechange = function() {
+					if (request.readyState === 4 && request.status !== 0)
+					{
+						if (request.status >= 400)
+							errorFunc();
+						else
+						{
+							var data_ = request.responseText.replace(/\r\n/g, "\n");		// fix windows style line endings
+							C2_AJAX_Success(tag_, data_);
+						}
+					}
+				};
+				request.onerror = errorFunc;
+				request.ontimeout = errorFunc;
+				request.onabort = errorFunc;
+				request.onprogress = progressFunc;
+				
+				request.open(method_, url_);
+				request.responseType = "text";
+				
+				if (method_ === "POST" && data_)
+				{
+					if (request["setRequestHeader"])
+					{
+						request["setRequestHeader"]("Content-Type", "application/x-www-form-urlencoded");
+						request["setRequestHeader"]("Content-Length", data_.length);
+					}
+						
+					request.send(data_);
+				}
+				else
+					request.send();
+				
+			}
+			catch (e)
+			{
+				errorFunc();
+			}
+		};
+	
+    </script>
+</body> 
+</html> 
